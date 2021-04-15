@@ -1,0 +1,113 @@
+version: "3.7"
+services:
+  web:
+    build: .
+    working_dir: /var/www/html
+    depends_on: [db]
+    volumes:
+       - web_vol:/var/www/html/
+    networks:
+      proxy_net:
+      inet_net:
+    links:
+      - db
+    healthcheck:
+      test: curl -f http://web:80/ || exit 0
+      interval: 5s
+      timeout: 10s
+      retries: 3
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+  db:
+    image: mysql:5.7
+    secrets:
+      - db_root_password
+      - db_dba_password
+    environment:
+      MYSQL_ROOT_PASSWORD: run/secrets/db_root_password
+      MYSQL_DATABASE: dbkuasai
+      MYSQL_USER: cilsykuasaiuser
+      MYSQL_PASSWORD: run/secrets/db_dba_password
+    volumes:
+      - db_vol:/var/lib/mysql
+    networks:
+      proxy_net:
+      inet_net:
+    healthcheck:
+      test: "/etc/init.d/mysql status"
+      interval: 1s
+      retries: 120
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+  proxy:
+    image: nginx:1.15.6
+    depends_on: [web]
+    volumes:
+       - proxy_vol:/etc/nginx/conf.d/default.conf
+    ports:
+      - 80:80
+    networks:
+      proxy_net:
+      ext_net:
+    healthcheck:
+      test: curl -f http://localhost/ || exit 0
+      interval: 5s
+      timeout: 10s
+      retries: 3
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+  pma:
+    image: pma-custom:v1
+    depends_on:
+      - db
+    environment:
+      DATABASE_HOST: db
+      DATABASE_PORT_NUMBER: 3306
+    volumes:
+      - pma_vol: /etc/phpmyadmin
+    networks:
+      int_net:
+      proxy_net:
+    links:
+      - db
+    healthcheck:
+      test: curl -f http://pma:8080/ || exit 0
+      interval: 5s
+      timeout: 10s
+      retries: 3
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+volumes:
+  pma_vol:
+  proxy_vol:
+  db_vol:
+  web_vol:
+networks:
+  proxy_net:
+  int_net:
+  ext_net:
+secrets:
+  db_root_password:
+    external: true
+  db_dba_password:
+    external: true
